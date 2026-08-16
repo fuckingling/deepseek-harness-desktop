@@ -19,7 +19,7 @@
     "build-runtime": "node scripts/build-runtime.mjs",
     "build-app": "node scripts/build-app.mjs",
     "build-dmg": "node scripts/build-dmg.mjs",
-    "build": "node scripts/build-runtime.mjs && node scripts/make-icon.mjs && node scripts/build-app.mjs && node scripts/build-dmg.mjs",
+    "build": "node scripts/build.mjs",
     "dev-run": "node scripts/dev-run.mjs",
     "e2e": "node scripts/e2e.mjs"
   }
