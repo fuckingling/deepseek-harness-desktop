@@ -1,0 +1,26 @@
+{
+  "name": "deepseek-harness-desktop",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 桌面启动器：自包含运行时 + DMG 安装 + 应用内更新",
+  "private": true,
+  "license": "MIT",
+  "author": "fuckingling <luckingling@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fuckingling/deepseek-harness-desktop.git"
+  },
+  "homepage": "https://github.com/fuckingling/deepseek-harness-desktop",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "fetch-tools": "node scripts/fetch-tools.mjs",
+    "make-icon": "node scripts/make-icon.mjs",
+    "build-runtime": "node scripts/build-runtime.mjs",
+    "build-app": "node scripts/build-app.mjs",
+    "build-dmg": "node scripts/build-dmg.mjs",
+    "build": "node scripts/build-runtime.mjs && node scripts/make-icon.mjs && node scripts/build-app.mjs && node scripts/build-dmg.mjs",
+    "dev-run": "node scripts/dev-run.mjs",
+    "e2e": "node scripts/e2e.mjs"
+  }
+}

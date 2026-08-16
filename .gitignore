@@ -1,0 +1,8 @@
+node_modules/
+build/
+dist/
+*.log
+.DS_Store
+
+# 生成物：assets/icon.icns 由 scripts/make-icon.mjs 从 assets/icon-app.svg 生成
+assets/icon.icns

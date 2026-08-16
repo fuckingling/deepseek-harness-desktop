@@ -1,0 +1,9 @@
+{
+  "name": "deepseek-harness-desktop",
+  "productName": "DeepSeek Harness",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness desktop launcher: self-contained runtime, in-place updates",
+  "main": "main.js",
+  "private": true,
+  "license": "MIT"
+}
