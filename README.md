@@ -132,7 +132,8 @@ npm run build-runtime    # 组装运行时（npm 安装 @deepseek-ai/dsh）
 npm run make-icon        # 由 assets/icon-app.svg 生成 icon.icns
 npm run build-app        # 组装 .app 并 ad-hoc 签名
 npm run build-dmg        # 打包 DMG + 更新产物（feed）
-# 或一条命令： npm run build
+# 或一条命令（flags 会由 scripts/build.mjs 透传给每一步，--update-feed 才能写进 harness.json）：
+npm run build -- --runtime-version 0.1.1 --update-feed https://github.com/fuckingling/deepseek-harness-desktop/releases/download/v0.1.1
 ```
 
 产出：
@@ -208,7 +209,7 @@ packages/updater/               启动器插件（双面：更新 + 备份还原
   client.js                     设置页 UI（更新/备份与还原/个人中心，zh/en）
 scripts/
   fetch-tools.mjs  build-runtime.mjs  build-app.mjs  build-dmg.mjs
-  make-icon.mjs    dev-run.mjs  make-fake-update.mjs  e2e.mjs
+  make-icon.mjs    dev-run.mjs  make-fake-update.mjs  e2e.mjs  build.mjs
   lib/util.mjs                  构建脚本共享工具（下载/哈希/配置）
 assets/icon-app.svg             App 图标源（icon.icns 由 make-icon 生成）
 e2e/                            Electron 页内自动化探测脚本（npm run e2e 运行）
