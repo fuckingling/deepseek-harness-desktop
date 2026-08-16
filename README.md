@@ -146,9 +146,15 @@ npm run build-dmg        # 打包 DMG + 更新产物（feed）
 常用参数（各脚本均支持）：`--arch arm64|x64`、`--dsh-version 0.1.0-rc.6`、
 `--runtime-version 0.1.0`、`--app-version 0.1.0`、`--channel stable`、`--update-feed <url>`。
 
+分支模型：`develop` 为默认开发分支（日常提交走这里），`master` 为稳定分支；发布时把
+develop 合并进 master，再从 master 打版本 tag（v0.1.0…），Release 与 DMG/更新产物都基于该 tag。
+
 发布新版本（以 GitHub Releases 为例）：
 
 ```bash
+# 0. 合并 develop → master（发布从稳定分支出 tag）
+git checkout master && git merge develop && git push
+
 # 1. 构建新版本（运行时版本号 +1）
 npm run build -- --runtime-version 0.1.1 --update-feed https://github.com/fuckingling/deepseek-harness-desktop/releases/download/v0.1.1
 
