@@ -11,12 +11,13 @@
   输出四分桶）、单日峰值（含日期）、最长会话持续时间、连续活跃天数、累计费用（按官方 DeepSeek
   价格：8/17 调价前后分档 + 高峰 9–12/14–18 北京时间、低谷半价，价格可在页面修改），
   以及 GitHub 式 **Token 活动热力图**（26 周 × 7 天，悬停看当日 token 与费用）和模型明细。
-  数据直接聚合自会话存储（`storages/sessions.json` + 投影缓存 `session_projcache.json`），
-  逐条用量缺失时按会话最后活跃日归集（页面有说明）。
-- **聊天记录备份与还原**：设置 → 备份与还原。一键把全部会话记录（`storages/`）与聊天中
-  粘贴的图片（`attachments/`）打包成 tar.gz（保存在应用内，可下载带走）；还原时先校验归档
-  安全性，把当前记录留一份 `.pre-restore` 快照后原子替换，并重启 Harness 完整加载——
-  字节级还原、失败不破坏现有数据。支持上传备份文件跨机器还原。
+  数据直接聚合自会话存储：投影缓存 `storages/session_projcache.json`（域数据形态 v3 或旧扁平形态）、
+  工作区 `storages/workspace.json` 与逐会话事件日志 `sessions/**/session.jsonl.zstd`（按帧解压，
+  逐条用量精确到天）；逐条用量缺失时按会话最后活跃日归集（页面有说明）。
+- **聊天记录备份与还原**：设置 → 备份与还原。一键把全部会话记录（`sessions/` 事件日志、
+  `storages/`）与聊天中粘贴的图片（`attachments/`）打包成 tar.gz（保存在应用内，可下载带走）；
+  还原时先校验归档安全性，把当前记录留一份 `.pre-restore` 快照后原子替换，并重启 Harness
+  完整加载——字节级还原、失败不破坏现有数据。支持上传备份文件跨机器还原。
 - **插件市场**：默认内置 [dsh-market](https://github.com/dsh-market/dsh-market)（465 star）——
   设置 → 插件市场，800+ 社区插件逛、搜、一键安装/升级/卸载、主题即换、备份恢复。
   市场用的 pnpm 也打包在应用里（`runtime/node/bin/pnpm`，npm 包形态跑在内置 Node 上），

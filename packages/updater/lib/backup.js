@@ -1,13 +1,14 @@
 /**
  * Chat-record backup & restore engine of the desktop launcher plugin.
  *
- * Backs up the complete session data under DSH_HOME — the `storages/`
- * directory (workspace + every session record the storage-json backend
- * writes) and the `attachments/` directory (images pasted into chats) — into
- * one tar.gz archive, and restores it by atomically swapping those
- * directories and asking the shell for a restart (exit 42), so the harness
- * reloads every restored record from disk. A pre-restore snapshot of the
- * current records is kept (`*.pre-restore`) for manual recovery.
+ * Backs up the complete session data under DSH_HOME — the `sessions/`
+ * directory (the append-only JSONL event logs, one per session), the
+ * `storages/` directory (workspace + every projection the storage-json
+ * backend writes) and the `attachments/` directory (images pasted into
+ * chats) — into one tar.gz archive, and restores it by atomically swapping
+ * those directories and asking the shell for a restart (exit 42), so the
+ * harness reloads every restored record from disk. A pre-restore snapshot of
+ * the current records is kept (`*.pre-restore`) for manual recovery.
  *
  * The plugin is plain Node ESM: only builtin modules + /usr/bin/tar (always
  * present on macOS), no build step. All paths are inside the app bundle's
@@ -31,7 +32,7 @@ import { join } from 'node:path'
 import { RESTART_EXIT_CODE } from './engine.js'
 
 /** Directories under DSH_HOME that constitute the complete chat records. */
-export const CHAT_DIRS = ['storages', 'attachments']
+export const CHAT_DIRS = ['storages', 'sessions', 'attachments']
 
 /** Manifest filename written into every archive root. */
 export const BACKUP_INFO = 'backup-info.json'
@@ -108,6 +109,7 @@ export class BackupEngine {
   }
 
   storagesPath() { return join(this.home, 'storages') }
+  sessionsPath() { return join(this.home, 'sessions') }
   attachmentsPath() { return join(this.home, 'attachments') }
 
   /** Snapshot for GET /launcher-backup/status (JSON-safe by construction). */
@@ -118,6 +120,7 @@ export class BackupEngine {
       lastError: this.lastError,
       lastBackup: this.lastBackup,
       storagesBytes: this.supported ? bytesOf(this.storagesPath()) : 0,
+      sessionsBytes: this.supported ? bytesOf(this.sessionsPath()) : 0,
       attachmentsBytes: this.supported ? bytesOf(this.attachmentsPath()) : 0,
       backups: this.listBackups(),
     }
@@ -135,7 +138,7 @@ export class BackupEngine {
       .sort((a, b) => (a.at < b.at ? 1 : -1))
   }
 
-  /** Create a fresh backup archive of storages/ + attachments/. */
+  /** Create a fresh backup archive of sessions/ + storages/ + attachments/. */
   async create() {
     if (!this.supported) throw new Error('备份功能仅在桌面启动器中可用')
     if (this.phase !== 'idle') throw new Error('已有备份/还原任务在进行中')
@@ -153,6 +156,7 @@ export class BackupEngine {
         createdAt: new Date().toISOString(),
         included,
         storagesBytes: bytesOf(this.storagesPath()),
+        sessionsBytes: bytesOf(this.sessionsPath()),
         attachmentsBytes: bytesOf(this.attachmentsPath()),
       }
       // Stage the manifest inside home and rename it inside the archive

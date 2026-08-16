@@ -550,7 +550,7 @@ window.__ModuleLoader__.load({
 			}
 
 			const backups = status === null ? [] : (status.backups ?? []);
-			const bytes = status === null ? 0 : (status.storagesBytes ?? 0) + (status.attachmentsBytes ?? 0);
+			const bytes = status === null ? 0 : (status.storagesBytes ?? 0) + (status.sessionsBytes ?? 0) + (status.attachmentsBytes ?? 0);
 			const lastBackup = status === null ? null : status.lastBackup;
 			const lastBackupAt = lastBackup === null ? null : fmtTime(lastBackup.at);
 
