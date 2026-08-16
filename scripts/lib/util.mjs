@@ -120,17 +120,25 @@ export function resolveConfig(flags = {}) {
 /** Small flag parser for --key value / --key=value. */
 export function parseFlags(argv) {
   const flags = {}
+  const set = (key, value) => {
+    flags[key] = value
+    // Expose a camelCase alias too (--update-feed → updateFeed): resolveConfig
+    // reads camelCase keys, while several scripts read the dashed keys
+    // directly — both styles must keep working.
+    const camel = key.replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+    if (camel !== key) flags[camel] = value
+  }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (!arg.startsWith('--')) continue
     const eq = arg.indexOf('=')
     if (eq !== -1) {
-      flags[arg.slice(2, eq)] = arg.slice(eq + 1)
+      set(arg.slice(2, eq), arg.slice(eq + 1))
     } else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
-      flags[arg.slice(2)] = argv[i + 1]
+      set(arg.slice(2), argv[i + 1])
       i += 1
     } else {
-      flags[arg.slice(2)] = true
+      set(arg.slice(2), true)
     }
   }
   return flags
