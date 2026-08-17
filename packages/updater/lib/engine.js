@@ -550,9 +550,10 @@ export class UpdaterEngine {
       this.log('apply(npm): forced redownload of dsh (test hook)')
     }
 
-    const nodeBin = join(staging, 'node', 'bin', 'node')
-    const npmCli = join(staging, 'node', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')
-    if (!existsSync(npmCli)) throw new Error('内置 npm 缺失（node/lib/node_modules/npm），无法从官方源更新')
+    // npm now ships as a plain-JS harness dependency exposed through a bin
+    // shim (runtime/node/bin/npm); the standalone Node dist is gone.
+    const npmBin = join(staging, 'node', 'bin', 'npm')
+    if (!existsSync(npmBin)) throw new Error('内置 npm 缺失（node/bin/npm），无法从官方源更新')
     this.log(`apply(npm): npm install ${DSH_PACKAGE}@${target} (official registry)`)
     const env = {
       ...process.env,
@@ -564,7 +565,7 @@ export class UpdaterEngine {
       npm_config_loglevel: 'warn',
       PATH: `${join(staging, 'node', 'bin')}${process.env.PATH ? `:${process.env.PATH}` : ''}`,
     }
-    await this.runCommand(nodeBin, [npmCli, 'install', '--omit=dev'], {
+    await this.runCommand(npmBin, ['install', '--omit=dev'], {
       cwd: harnessDir,
       env,
       timeoutMs: 10 * 60 * 1000,

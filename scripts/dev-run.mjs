@@ -40,6 +40,7 @@ async function syncPluginLinks(homeDir) {
     { name: 'dsh-launcher-updater', target: join(RUNTIME, 'plugins', 'dsh-launcher-updater') },
     { name: '@liustack/modlens', target: join(RUNTIME, 'harness', 'node_modules', '@liustack', 'modlens') },
     { name: 'dshmarket', target: join(RUNTIME, 'harness', 'node_modules', 'dshmarket') },
+    { name: '@dsh-external/dsh-super-injector', target: join(RUNTIME, 'harness', 'node_modules', '@dsh-external', 'dsh-super-injector') },
   ]
   for (const plugin of plugins) {
     if (!existsSync(plugin.target)) {
@@ -67,6 +68,14 @@ async function main() {
   const port = flags.port !== undefined ? Number.parseInt(String(flags.port), 10) : await pickFreePort()
   const manifest = JSON.parse(await readFile(join(RUNTIME, 'harness.json'), 'utf8'))
 
+  // The runtime's node shim runs the vendored Electron binary as Node
+  // (ELECTRON_RUN_AS_NODE=1) — dev runs outside the .app bundle, so the
+  // shim's bundle-layout discovery cannot help; point it here explicitly.
+  const electronBin = join(BUILD, 'vendor', 'electron', 'Electron.app', 'Contents', 'MacOS', 'Electron')
+  if (!existsSync(electronBin)) {
+    throw new Error('vendored Electron missing — run `npm run fetch-tools` first')
+  }
+
   const env = {
     ...process.env,
     DSH_HOME: join(DATA, 'home'),
@@ -75,6 +84,7 @@ async function main() {
     DSH_LAUNCHER_APP_VERSION: config.appVersion,
     DSH_LAUNCHER_FEED_URL: flags.feed ?? manifest.updateFeed ?? '',
     DSH_LAUNCHER_CHANNEL: flags.channel ?? manifest.channel ?? 'stable',
+    DSH_LAUNCHER_NODE_BIN: electronBin,
     PATH: `${join(RUNTIME, 'node', 'bin')}${delimiter}${process.env.PATH ?? ''}`,
     npm_config_store_dir: join(DATA, 'pnpm-store'),
     npm_config_cache_dir: join(DATA, 'pnpm-cache'),

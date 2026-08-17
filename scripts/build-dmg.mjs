@@ -42,11 +42,36 @@ async function main() {
 
   console.log(`creating ${dmgPath} …`)
   await rm(dmgPath, { force: true })
-  await run('/usr/bin/hdiutil', [
-    'create', '-volname', APP_NAME, '-srcfolder', staging, '-ov', '-format', 'UDZO', dmgPath,
-  ], { label: 'hdiutil' })
+  // Default UDZO (zlib) at maximum level: noticeably smaller than hdiutil's
+  // default (which favors speed) and fast to create/mount.
+  // --dmg-format UDBZ re-encodes a UDZO-9 image as bzip2: ~30% smaller
+  // release artifact, at the cost of a slower build and mount. (Creating
+  // UDBZ straight from the staging folder uses small blocks and barely
+  // beats UDZO-9; the convert path is what actually shrinks it.)
+  const format = flags['dmg-format'] ?? 'UDZO'
+  const udzoImageKey = ['-imagekey', 'zlib-level=9']
+  if (format === 'UDBZ') {
+    const udzoPath = `${dmgPath}.udzo.tmp.dmg`
+    await rm(udzoPath, { force: true })
+    await run('/usr/bin/hdiutil', [
+      'create', '-volname', APP_NAME, '-srcfolder', staging, '-ov', '-format', 'UDZO',
+      ...udzoImageKey, udzoPath,
+    ], { label: 'hdiutil-create-udzo' })
+    await run('/usr/bin/hdiutil', [
+      'convert', udzoPath, '-format', 'UDBZ', '-imagekey', 'bzip2-level=9', '-o', dmgPath,
+    ], { label: 'hdiutil-convert-udbz' })
+    await rm(udzoPath, { force: true })
+  } else {
+    const imageKeyArgs = format === 'UDZO' ? udzoImageKey : []
+    await run('/usr/bin/hdiutil', [
+      'create', '-volname', APP_NAME, '-srcfolder', staging, '-ov', '-format', format,
+      ...imageKeyArgs, dmgPath,
+    ], { label: 'hdiutil' })
+  }
 
-  // Cosmetic Finder layout: mount, arrange icons, detach.
+  // Cosmetic Finder layout: mount, arrange icons, detach. Best effort —
+  // read-write mount may be denied in sandboxed/CI environments; the DMG is
+  // fully usable without the icon arrangement.
   try {
     const mount = join(BUILD, 'dmg-mount')
     await mkdir(mount, { recursive: true })
@@ -71,7 +96,7 @@ async function main() {
     `], { label: 'osascript' })
     await run('/usr/bin/hdiutil', ['detach', mount, '-quiet'], { label: 'hdiutil-detach', quiet: true })
   } catch (error) {
-    console.warn(`  warning: Finder layout skipped (${error.message.split('\n')[0]})`)
+    console.warn(`  warning: Finder layout skipped (${error.message.split('\n').slice(0, 2).join(' | ')})`)
   }
 
   /* ── update feed artifacts ── */

@@ -1,21 +1,20 @@
 /**
  * Fetch the build-time vendored tools into build/vendor:
- *   - a standalone Node.js 24 (LTS) distribution for the runtime (the
- *     harness runs on THIS node, never on the user's system node),
- *   - the Electron.app distribution for the launcher shell.
+ *   - the Electron.app distribution for the launcher shell. Its binary is
+ *     ALSO the runtime Node: the runtime ships only bin shims (node/npm/pnpm)
+ *     that exec the app binary with ELECTRON_RUN_AS_NODE=1, so no standalone
+ *     Node.js distribution is bundled anymore (previously ~196 MB).
  *
- * pnpm is NOT fetched here: the runtime bundles the npm `pnpm` package
- * (plain JS, runs on the bundled Node via a bin shim) because pnpm's
- * standalone binaries are unsigned and macOS kills them.
+ * pnpm/npm are plain-JS npm packages installed inside the runtime's harness
+ * install; pnpm's standalone binaries are unsigned and macOS kills them.
  *
- * Downloads are cached; re-running reuses them. Versions resolve
- * automatically (latest stable Electron, latest Node 24) unless pinned with
- * --electron-version / --node-version.
+ * Downloads are cached; re-running reuses them. The Electron version resolves
+ * automatically (latest stable) unless pinned with --electron-version.
  *
- * Usage: node scripts/fetch-tools.mjs [--arch arm64|x64] [--electron-version v..] [--node-version 24.x.y]
+ * Usage: node scripts/fetch-tools.mjs [--arch arm64|x64] [--electron-version v..]
  */
 
-import { chmod, mkdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, readFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { BUILD, download, parseFlags, run, resolveConfig } from './lib/util.mjs'
@@ -24,7 +23,6 @@ const flags = parseFlags(process.argv.slice(2))
 const config = resolveConfig(flags)
 
 const VENDOR = join(BUILD, 'vendor')
-const NODE_DIR = join(VENDOR, 'node')
 const ELECTRON_DIR = join(VENDOR, 'electron')
 
 async function fetchJsonWithRetry(url, attempts = 4) {
@@ -43,13 +41,6 @@ async function fetchJsonWithRetry(url, attempts = 4) {
     }
   }
   throw lastError
-}
-
-async function latestNode24() {
-  const index = await fetchJsonWithRetry('https://nodejs.org/dist/index.json')
-  const match = index.find(entry => String(entry.version).startsWith('v24.') && entry.lts !== false)
-  if (match === undefined) throw new Error('no Node 24 LTS found in dist index')
-  return match
 }
 
 async function latestElectron() {
@@ -74,30 +65,7 @@ async function main() {
   console.log(`arch=${config.arch}`)
   await mkdir(VENDOR, { recursive: true })
 
-  /* ── Node ── */
-  if (existsSync(join(NODE_DIR, 'bin', 'node'))) {
-    const version = await run(join(NODE_DIR, 'bin', 'node'), ['--version'], { quiet: true })
-    console.log(`node: cached ${version.trim()}`)
-  } else {
-    const entry = config.nodeVersion !== null
-      ? { version: /^v/.test(config.nodeVersion) ? config.nodeVersion : `v${config.nodeVersion}`, files: null }
-      : await latestNode24()
-    const version = entry.version
-    const url = `https://nodejs.org/dist/${version}/node-${version}-darwin-${config.arch}.tar.gz`
-    console.log(`node: downloading ${url}`)
-    const archive = join(VENDOR, `node-${version}.tar.gz`)
-    await download(url, archive, 'node')
-    await rm(join(VENDOR, 'node-extract'), { recursive: true, force: true })
-    await mkdir(join(VENDOR, 'node-extract'), { recursive: true })
-    await run('/usr/bin/tar', ['-xzf', archive, '-C', join(VENDOR, 'node-extract')], { label: 'tar' })
-    await rm(NODE_DIR, { recursive: true, force: true })
-    await run('/bin/mv', [join(VENDOR, 'node-extract', `node-${version}-darwin-${config.arch}`), NODE_DIR], { label: 'mv' })
-    await rm(join(VENDOR, 'node-extract'), { recursive: true, force: true })
-    await rm(archive, { force: true })
-    console.log(`node: installed ${version} → ${NODE_DIR}`)
-  }
-
-  /* ── Electron ── */
+  /* ── Electron (shell + runtime Node via ELECTRON_RUN_AS_NODE) ── */
   const electronApp = join(ELECTRON_DIR, 'Electron.app')
   if (existsSync(join(electronApp, 'Contents', 'MacOS', 'Electron'))) {
     const plist = await readFile(join(electronApp, 'Contents', 'Info.plist'), 'utf8')

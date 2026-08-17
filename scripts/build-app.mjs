@@ -7,9 +7,15 @@
  *   Contents/MacOS/DeepSeek Harness        renamed Electron binary (immutable)
  *   Contents/Resources/app/                the supervisor shell (immutable)
  *   Contents/Resources/runtime/            active runtime (swapped on update)
- *   Contents/Resources/runtime.pristine/   factory runtime (self-heal source)
  *   Contents/Resources/data/               user data: DSH_HOME, logs
+ *                                          (the shell snapshots the healthy
+ *                                          runtime into data/pristine on
+ *                                          first boot — the .app no longer
+ *                                          embeds a second compressed copy)
  *   Contents/Resources/icon.icns
+ *
+ * Electron's framework ships ~50 locale packs; we keep en + zh_CN and drop
+ * the rest before signing (~44 MB saved).
  *
  * Usage: node scripts/build-app.mjs [--app-version 0.1.0] [--skip-sign]
  */
@@ -100,19 +106,31 @@ async function main() {
     console.warn('  warning: assets/icon.icns missing — run `npm run make-icon`; continuing without an icon')
   }
 
+  /* ── locale prune: keep en + zh_CN, drop the other ~50 locale packs ── */
+  const fwResources = join(APP_DIR, 'Contents', 'Frameworks', 'Electron Framework.framework', 'Versions', 'A', 'Resources')
+  const keptLocales = new Set(['en.lproj', 'zh_CN.lproj'])
+  for (const entry of await readdir(fwResources, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.endsWith('.lproj')) continue
+    if (keptLocales.has(entry.name)) continue
+    await rm(join(fwResources, entry.name), { recursive: true, force: true })
+  }
+  console.log('  locale prune: kept en.lproj + zh_CN.lproj, removed the rest')
+
   /* ── shell ── */
   await rm(join(RESOURCES, 'app'), { recursive: true, force: true })
   await cp(join(ROOT, 'shell'), join(RESOURCES, 'app'), { recursive: true })
 
-  /* ── runtime + pristine ── */
-  console.log('  copying runtime (active + pristine)…')
+  /* ── runtime (the compressed pristine snapshot moved to first boot:
+     the shell tars the healthy runtime into data/pristine, so the .app
+     no longer embeds a second copy of the runtime) ── */
+  console.log('  copying runtime …')
   await rm(join(RESOURCES, 'runtime'), { recursive: true, force: true })
-  await rm(join(RESOURCES, 'runtime.pristine'), { recursive: true, force: true })
   await cp(RUNTIME_SRC, join(RESOURCES, 'runtime'), { recursive: true, dereference: false })
-  await cp(RUNTIME_SRC, join(RESOURCES, 'runtime.pristine'), { recursive: true, dereference: false })
 
-  /* ── data dir: created empty; the shell seeds profiles, plugin links, and
-     logs on first boot (and reconciles them on every boot) ── */
+  /* ── data dir: shipped EMPTY — the shell seeds profiles, plugin links, and
+     logs on first boot (and reconciles them on every boot). A prior local
+     run must never leak user data or pristine snapshots into a release. ── */
+  await rm(join(RESOURCES, 'data'), { recursive: true, force: true })
   await mkdir(join(RESOURCES, 'data'), { recursive: true })
 
   /* ── sign (ad-hoc; swap a Developer ID identity via --sign-identity) ── */

@@ -20,7 +20,7 @@
   完整加载——字节级还原、失败不破坏现有数据。支持上传备份文件跨机器还原。
 - **插件市场**：默认内置 [dsh-market](https://github.com/dsh-market/dsh-market)（465 star）——
   设置 → 插件市场，800+ 社区插件逛、搜、一键安装/升级/卸载、主题即换、备份恢复。
-  市场用的 pnpm 也打包在应用里（`runtime/node/bin/pnpm`，npm 包形态跑在内置 Node 上），
+  市场用的 pnpm 也打包在应用里（`runtime/node/bin/pnpm`，npm 包形态跑在 Electron 兼任的 Node 上——外壳以 `ELECTRON_RUN_AS_NODE=1` 把自身二进制当 Node 用，不再捆绑独立 Node.js），
   pnpm 的包缓存与 store 都指向应用内数据目录——不探测系统 PATH、不用 corepack、不装全局包；
   市场自身的"一键重启"已关闭（`allowRestart: false`），重启统一走 设置 → 更新 → 重启 Harness，
   由桌面外壳监督执行。
@@ -30,6 +30,9 @@
   设置 → 插件 → 视觉引擎（ModLens）里配置引擎（免费 Gemini key / OpenAI 兼容端点 /
   Antigravity CLI 等六种内置 provider + 复用本机已登录的 Codex/OpenCode/Pi 等）。
   注：ModLens 的提供商配置按它自身设计存于 `~/.modlens/config.json`（跨 harness 共享）。
+- **路由套件**：默认内置 [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) 的
+  dsh-super-injector（`dev_*` 运行时插件管理工具）与 Router Standard / Router Spec 实验预设；
+  首次启动时外壳会把随 runtime 分发的预设复制到 `data/home/.agent-presets/`，新建会话即可选择。
 - **Codex 风格外框**：沉浸式无边框深色窗口（`hiddenInset`，红绿灯悬浮内嵌），
   顶部注入拖拽条可任意拖动窗口，侧边栏 logo 区（宽/窄两种形态）自动避让 macOS 窗口按钮，
   记忆窗口位置与大小、居中启动。外壳还注入 UI 兼容性修正：插件市场的分类选择行
@@ -47,23 +50,37 @@ DeepSeek Harness.app/Contents/
 └── Resources/
     ├── app/                     shell 主进程代码（不可变）
     ├── runtime/                 ← 可更新单元：完整的 Harness 运行环境
-    │   ├── node/                独立 Node.js 24（不碰系统 node）
+    │   ├── node/                bin shim（node/npm/pnpm）：exec 外壳的
+    │   │                        Electron 二进制（ELECTRON_RUN_AS_NODE=1），
+    │   │                        不再捆绑独立 Node.js
     │   ├── harness/             @deepseek-ai/dsh + dsh-visual-plugin + 全部依赖
     │   ├── plugins/             dsh-launcher-updater 更新插件
+    │   ├── agent-presets/       dsh-routing-suite 路由预设（首启复制到用户目录）
     │   ├── profile-overlay.yml  默认插件挂载层（外壳以 --patch 应用）
     │   └── harness.json         运行时清单（版本 / 通道 / 更新源）
-    ├── runtime.pristine/        出厂运行时的只读副本（自修复用）
     ├── runtime.backup/          更新前的上一版本（回滚用，健康启动后自动清除）
-    └── data/                    用户数据：DSH_HOME（会话、设置、预设）、日志
+    └── data/                    用户数据：DSH_HOME（会话、设置、预设）、日志；
+        └── pristine/            自修复快照：首次健康启动后由外壳把当前
+                                 runtime 压缩到 runtime-<版本>.tar.gz
+                                 （不再随 .app 打包第二份 runtime 副本）
 ```
 
+> **体积**：runtime 在构建时经过瘦身（`scripts/lib/prune-runtime.mjs`）：剔除全部
+> source map、类型声明、TS 源码、测试/文档、非 macOS 平台的原生二进制（sharp-wasm32、
+> node-pty/reflink 的其它平台 prebuild）与审计过的冗余文件（web-streams-polyfill 的多格式
+> 矩阵、otel semantic-conventions 的 esnext 构建、npm 文档等），约 -150 MB。Electron 框架只
+> 保留 en/zh_CN 两个语言包（约 -44 MB）。DMG 用 UDZO zlib-level=9 压缩。整条链把 DMG 从
+> ~1.4 GB（0.1.0 最初版本）降到几百兆。排查体积问题可用 `--no-prune` 跳过瘦身对比。
+
 启动时 shell 只做三件事：拉起 `runtime/node/bin/node … dsh web --port N`（`DSH_HOME` 指向应用内
-`data/home`，`PATH` 前置应用内的 node），等服务器就绪后打开窗口。用户的系统环境完全不被触碰。
+`data/home`，`PATH` 前置应用内的 node shim，shim 再以 `ELECTRON_RUN_AS_NODE=1` 把外壳二进制当
+Node 用），等服务器就绪后打开窗口。用户的系统环境完全不被触碰。
 
 默认插件通过**运行时 overlay**（`runtime/profile-overlay.yml`，以 `--patch` 叠加在 web profile
 之后）挂载：插件包本体随 runtime 一起分发，外壳每次启动把 profile 的 `node_modules` 符号链接
 对账到 runtime 内的插件位置。**升级 runtime 即升级插件**，用户数据目录无需改动；移除某个默认
-插件也只需在新 runtime 的 overlay 里删掉对应行。
+插件也只需在新 runtime 的 overlay 里删掉对应行。随 runtime 分发的 `agent-presets/` 默认预设
+会在首次启动时复制到 `data/home/.agent-presets/`（已存在则不覆盖用户自建预设）。
 
 ### 应用内更新（设置 → 更新）
 
@@ -82,11 +99,11 @@ DeepSeek Harness.app/Contents/
 npm 的 `@deepseek-ai/dsh`。因此“检查更新”默认直接查**官方 npm registry**：
 
 1. 对比应用内 `dshVersion` 与官方 `dist-tag latest`；发现新版本后“更新并重启”会：
-   把当前 runtime 复制到暂存目录 → 重写 dsh 版本 → 用**应用内置 npm**（Node 发行版自带，
+   把当前 runtime 复制到暂存目录 → 重写 dsh 版本 → 用**应用内置 npm**（以纯 JS 依赖随 runtime 分发，经 `node/bin/npm` shim 运行，
    缓存指向应用内目录，不触碰系统环境）从官方 registry 安装 → 原子交换 → 重启。
    默认插件（图像支持等）随之保留。
 2. 配置了启动器 feed（`harness.json` 的 `updateFeed`）时，同时检查 feed 的 runtime 产物；
-   官方 dsh 版本优先，feed 用于分发启动器专属的整包更新（内置 Node 升级、默认插件集变更等）。
+   官方 dsh 版本优先，feed 用于分发启动器专属的整包更新（默认插件集变更、Electron 升级等）。
 
 npm registry 可用环境变量 `DSH_LAUNCHER_NPM_REGISTRY` 覆盖（默认官方 registry.npmjs.org）。
 
@@ -128,7 +145,7 @@ GitHub Releases 上：
 前置要求：macOS，系统 Node ≥ 20（仅构建用），网络可访问 nodejs.org / npm / GitHub。
 
 ```bash
-npm run fetch-tools      # 下载 Node 24 与 Electron（缓存于 build/vendor）
+npm run fetch-tools      # 下载 Electron（缓存于 build/vendor；兼任运行时 Node）
 npm run build-runtime    # 组装运行时（npm 安装 @deepseek-ai/dsh）
 npm run make-icon        # 由 assets/icon-app.svg 生成 icon.icns
 npm run build-app        # 组装 .app 并 ad-hoc 签名
@@ -147,6 +164,8 @@ npm run build -- --runtime-version 0.1.1 --update-feed https://github.com/fuckin
 
 常用参数（各脚本均支持）：`--arch arm64|x64`、`--dsh-version 0.1.0-rc.6`、
 `--runtime-version 0.1.0`、`--app-version 0.1.0`、`--channel stable`、`--update-feed <url>`。
+体积相关：`--no-prune`（跳过 runtime 瘦身，用于排查）、`--dmg-format UDBZ`（bzip2 二段式
+压缩，DMG 再小 ~30%，代价是构建与挂载更慢；默认 UDZO zlib-level=9）。
 
 分支模型：`develop` 为默认开发分支（日常提交走这里），`master` 为稳定分支；发布时把
 develop 合并进 master，再从 master 打版本 tag（v0.1.0…），Release 与 DMG/更新产物都基于该 tag。

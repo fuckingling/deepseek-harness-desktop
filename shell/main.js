@@ -5,20 +5,27 @@
  * harness run lives in a self-contained, swappable runtime directory inside
  * the app bundle:
  *
- *   Contents/Resources/runtime/          active runtime: bundled Node, the
- *                                        @deepseek-ai/dsh installation, and
- *                                        the launcher-updater plugin
- *   Contents/Resources/runtime.pristine/ factory-shipped runtime (self-heal)
+ *   Contents/Resources/runtime/          active runtime: bin shims (the
+ *                                        app's own Electron binary runs as
+ *                                        Node), the @deepseek-ai/dsh
+ *                                        installation, and the launcher-
+ *                                        updater plugin
  *   Contents/Resources/runtime.backup/   previous runtime after an update
  *                                        (deleted once the new one proves
  *                                        healthy — the rollback source)
  *   Contents/Resources/data/             persistent user data (DSH_HOME,
- *                                        logs, update state); never swapped
+ *                                        logs, update state); never swapped.
+ *                                        data/pristine/ holds the compressed
+ *                                        self-heal snapshot this shell makes
+ *                                        from the latest healthy runtime
+ *                                        (the .app no longer embeds a second
+ *                                        compressed copy of the runtime)
  *
  * Responsibilities:
  *   - boot the harness (`runtime/node/bin/node … dsh web --port N`) with a
  *     fresh free port and a fully app-internal environment (DSH_HOME inside
- *     the bundle, bundled Node first on PATH — nothing global is touched),
+ *     the bundle, runtime bin dir first on PATH — nothing global is
+ *     touched),
  *   - supervise it: exit code 42 means "restart" (update applied or the
  *     user asked for a restart); an abnormal exit during boot counts toward
  *     rollback; a healthy boot commits (deletes) the previous runtime,
@@ -28,7 +35,7 @@
  */
 
 const { app, BrowserWindow, Menu, dialog, shell: osShell } = require('electron')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -37,10 +44,11 @@ const net = require('node:net')
 /* ────────────────────────────── paths & constants ────────────────────────── */
 const RESOURCES = process.resourcesPath
 const RUNTIME = path.join(RESOURCES, 'runtime')
-const PRISTINE = path.join(RESOURCES, 'runtime.pristine')
+const LEGACY_PRISTINE_TAR = path.join(RESOURCES, 'runtime.pristine.tar.gz')
 const BACKUP = path.join(RESOURCES, 'runtime.backup')
 const BAD = path.join(RESOURCES, 'runtime.bad')
 const DATA = path.join(RESOURCES, 'data')
+const PRISTINE_DIR = path.join(DATA, 'pristine')
 const HOME = path.join(DATA, 'home')
 const LOGS = path.join(DATA, 'logs')
 const HARNESS_LOG = path.join(LOGS, 'harness.log')
@@ -97,9 +105,89 @@ function runtimeValid(dir) {
     && exists(path.join(dir, DSH_CLI_BIN))
 }
 
-function copyDirSync(from, to) {
-  fs.rmSync(to, { recursive: true, force: true })
-  fs.cpSync(from, to, { recursive: true, dereference: false })
+/**
+ * The pristine self-heal snapshot. Since the .app stopped embedding a
+ * compressed copy of the runtime, this shell creates the snapshot itself
+ * from the latest healthy runtime (data/pristine/runtime-<version>.tar.gz).
+ * Installs that predate the feature may still carry the factory snapshot
+ * inside Resources (legacy fallback).
+ */
+function pristineSnapshotPath() {
+  try {
+    if (fs.existsSync(PRISTINE_DIR)) {
+      const snapshots = fs.readdirSync(PRISTINE_DIR)
+        .filter(name => /^runtime-.*\.tar\.gz$/.test(name))
+        .sort()
+      if (snapshots.length > 0) return path.join(PRISTINE_DIR, snapshots[snapshots.length - 1])
+    }
+  } catch { /* data dir unavailable */ }
+  return exists(LEGACY_PRISTINE_TAR) ? LEGACY_PRISTINE_TAR : null
+}
+
+/**
+ * Snapshot the currently healthy runtime as the pristine self-heal source.
+ * Runs detached (a slow disk must never delay boot); tmp+rename keeps the
+ * snapshot atomic, and only the newest version is kept.
+ */
+function snapshotPristine() {
+  const manifest = readManifest(RUNTIME)
+  const version = manifest?.runtimeVersion ?? 'unknown'
+  const target = path.join(PRISTINE_DIR, `runtime-${version}.tar.gz`)
+  if (exists(target)) return
+  try {
+    fs.mkdirSync(PRISTINE_DIR, { recursive: true })
+  } catch (error) {
+    log(`pristine: mkdir failed: ${error.message}`)
+    return
+  }
+  const tmp = `${target}.tmp`
+  try { fs.rmSync(tmp, { force: true }) } catch { /* absent */ }
+  log(`pristine: snapshotting runtime ${version} …`)
+  const tar = spawn('/usr/bin/tar', ['-czf', tmp, '-C', RUNTIME, '.'], { stdio: 'ignore' })
+  tar.on('error', error => log(`pristine: snapshot failed: ${error.message}`))
+  tar.on('exit', code => {
+    try {
+      if (code !== 0) {
+        fs.rmSync(tmp, { force: true })
+        log(`pristine: snapshot failed (tar exit ${String(code)})`)
+        return
+      }
+      fs.renameSync(tmp, target)
+      for (const name of fs.readdirSync(PRISTINE_DIR)) {
+        if (/^runtime-.*\.tar\.gz$/.test(name)) {
+          const full = path.join(PRISTINE_DIR, name)
+          if (full !== target) fs.rmSync(full, { force: true })
+        }
+      }
+      log('pristine: snapshot ready')
+    } catch (error) {
+      log(`pristine: snapshot finalize failed: ${error.message}`)
+    }
+  })
+  tar.unref()
+}
+
+/**
+ * Recreate a factory runtime from the pristine snapshot. Extract into a
+ * temp dir inside Resources, then atomically rename into place: a failed
+ * extraction never leaves a half-restored runtime behind.
+ */
+function restorePristine() {
+  const pristineTar = pristineSnapshotPath()
+  if (pristineTar === null) return false
+  const tmp = path.join(RESOURCES, 'runtime.restore.tmp')
+  fs.rmSync(tmp, { recursive: true, force: true })
+  fs.mkdirSync(tmp, { recursive: true })
+  const result = spawnSync('/usr/bin/tar', ['-xzf', pristineTar, '-C', tmp], { stdio: 'ignore' })
+  if (result.status !== 0 || !runtimeValid(tmp)) {
+    fs.rmSync(tmp, { recursive: true, force: true })
+    log('restore: pristine snapshot extraction failed')
+    return false
+  }
+  fs.rmSync(RUNTIME, { recursive: true, force: true })
+  fs.renameSync(tmp, RUNTIME)
+  log(`restore: factory runtime restored from ${path.basename(pristineTar)}`)
+  return true
 }
 
 function logTail(pathname, lines) {
@@ -146,6 +234,7 @@ const RUNTIME_PLUGIN_LINKS = [
   { name: 'dsh-launcher-updater', target: parts => path.join(parts.runtime, 'plugins', 'dsh-launcher-updater') },
   { name: '@liustack/modlens', target: parts => path.join(parts.runtime, 'harness', 'node_modules', '@liustack', 'modlens') },
   { name: 'dshmarket', target: parts => path.join(parts.runtime, 'harness', 'node_modules', 'dshmarket') },
+  { name: '@dsh-external/dsh-super-injector', target: parts => path.join(parts.runtime, 'harness', 'node_modules', '@dsh-external', 'dsh-super-injector') },
 ]
 
 function syncPluginLinks() {
@@ -173,6 +262,36 @@ function syncPluginLinks() {
   }
 }
 
+/**
+ * Default agent presets shipped inside the runtime (dsh-routing-suite).
+ * Copy them into the user's DSH_HOME only when the preset id is absent, so
+ * user-authored copies are never overwritten by a runtime update.
+ */
+function syncUserPresets() {
+  const shippedRoot = path.join(RUNTIME, 'agent-presets')
+  if (!exists(shippedRoot)) return
+  const userRoot = path.join(HOME, '.agent-presets')
+  let entries = []
+  try {
+    entries = fs.readdirSync(shippedRoot, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const source = path.join(shippedRoot, entry.name)
+    const target = path.join(userRoot, entry.name)
+    if (exists(target)) continue
+    try {
+      fs.mkdirSync(userRoot, { recursive: true })
+      fs.cpSync(source, target, { recursive: true, dereference: false })
+      log(`preset: installed ${entry.name} → ${target}`)
+    } catch (error) {
+      log(`preset: failed to install ${entry.name}: ${error.message}`)
+    }
+  }
+}
+
 function spawnHarness() {
   rotateLog()
   bootStartAt = Date.now()
@@ -183,6 +302,7 @@ function spawnHarness() {
   const cliBin = path.join(RUNTIME, DSH_CLI_BIN)
   const manifest = readManifest(RUNTIME) ?? {}
   syncPluginLinks()
+  syncUserPresets()
 
   const env = {
     ...process.env,
@@ -190,6 +310,9 @@ function spawnHarness() {
     DSH_LAUNCHER_RUNTIME_DIR: RUNTIME,
     DSH_LAUNCHER_DATA_DIR: DATA,
     DSH_LAUNCHER_APP_VERSION: app.getVersion(),
+    // The runtime's node/npm/pnpm bin shims exec this binary with
+    // ELECTRON_RUN_AS_NODE=1 — Electron doubles as the runtime Node.
+    DSH_LAUNCHER_NODE_BIN: process.execPath,
     PATH: `${path.join(RUNTIME, 'node', 'bin')}${path.delimiter}${process.env.PATH ?? ''}`,
     // pnpm (used by dsh-market to install plugins) keeps its tarball store
     // and metadata cache inside the app's data directory — nothing lands in
@@ -250,7 +373,8 @@ function clearCommit() {
   }
 }
 
-/** After a healthy boot, the previous runtime (update rollback source) goes. */
+/** After a healthy boot, the previous runtime (update rollback source) goes,
+ *  and the healthy runtime becomes the new pristine self-heal snapshot. */
 function armCommit() {
   clearCommit()
   commitTimer = setTimeout(() => {
@@ -260,6 +384,7 @@ function armCommit() {
       log('commit: healthy boot, removing previous runtime backup')
       fs.rmSync(BACKUP, { recursive: true, force: true })
     }
+    snapshotPristine()
   }, COMMIT_DELAY_MS)
   commitTimer.unref?.()
 }
@@ -272,12 +397,11 @@ function tryRollback() {
     fs.renameSync(BACKUP, RUNTIME)
     return true
   }
-  if (exists(PRISTINE)) {
+  if (pristineSnapshotPath() !== null) {
     log('rollback: restoring the pristine factory runtime')
     fs.rmSync(BAD, { recursive: true, force: true })
     fs.renameSync(RUNTIME, BAD)
-    copyDirSync(PRISTINE, RUNTIME)
-    return true
+    return restorePristine()
   }
   return false
 }
@@ -614,12 +738,10 @@ function ensureRuntime() {
     fs.renameSync(BACKUP, RUNTIME)
     return true
   }
-  if (exists(PRISTINE) && runtimeValid(PRISTINE)) {
+  if (pristineSnapshotPath() !== null) {
     log('runtime missing/invalid; restoring the pristine factory runtime')
     fs.rmSync(BAD, { recursive: true, force: true })
-    fs.rmSync(RUNTIME, { recursive: true, force: true })
-    copyDirSync(PRISTINE, RUNTIME)
-    return true
+    return restorePristine()
   }
   return false
 }
