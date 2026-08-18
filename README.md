@@ -154,10 +154,12 @@ npm run build -- --runtime-version 0.1.1 --update-feed https://github.com/fuckin
 体积相关：`--no-prune`（跳过 runtime 瘦身，用于排查）、`--dmg-format UDBZ`（bzip2 二段式
 压缩，DMG 再小 ~30%，代价是构建与挂载更慢；默认 UDZO zlib-level=9）。
 
-> **DMG 符号链接**：`build-dmg.mjs` 把 app 复制进 DMG 时必须用 `verbatimSymlinks: true`——
-> Node 的 `fs.cp` 默认会把 bundle 内的相对符号链接（Electron Framework 的
-> `Versions/Current/...` 等）重写成构建机的绝对路径，装到别的机器（或构建目录被删后）打开即
-> 闪退（dyld: Library not loaded）。修改此复制逻辑时务必保持原样保留链接。
+> **符号链接**：打包链里所有 `fs.cp` 复制 bundle 时必须带 `verbatimSymlinks: true`
+> （`build-app.mjs` 复制 runtime、`build-dmg.mjs` 复制 app 进 DMG）。Node 的 `fs.cp`
+> 默认会把相对符号链接（Electron Framework 的 `Versions/Current/...`、npm 的 `.bin`
+> shim）重写成构建机的绝对路径，装到别的机器（或构建目录被删后）打开即闪退
+> （dyld: Library not loaded）。`build-app` 末尾有绝对链接门禁：成品 bundle 内出现
+> 任何绝对符号链接会直接构建失败。
 
 分支模型：`develop` 为默认开发分支（日常提交走这里），`master` 为稳定分支；发布时把
 develop 合并进 master，再从 master 打版本 tag（v0.1.0…），Release 与 DMG/更新产物都基于该 tag。

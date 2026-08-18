@@ -20,7 +20,7 @@
  * Usage: node scripts/build-app.mjs [--app-version 0.1.0] [--skip-sign]
  */
 
-import { cp, mkdir, rm, writeFile, readFile, readdir } from 'node:fs/promises'
+import { cp, mkdir, rm, writeFile, readFile, readdir, readlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { BUILD, DIST, ROOT, parseFlags, resolveConfig, run } from './lib/util.mjs'
@@ -125,7 +125,11 @@ async function main() {
      no longer embeds a second copy of the runtime) ── */
   console.log('  copying runtime …')
   await rm(join(RESOURCES, 'runtime'), { recursive: true, force: true })
-  await cp(RUNTIME_SRC, join(RESOURCES, 'runtime'), { recursive: true, dereference: false })
+  // verbatimSymlinks is REQUIRED (same reason as in build-dmg): npm's .bin
+  // shims inside the runtime are RELATIVE symlinks; without this flag fs.cp
+  // re-resolves them to absolute build-machine paths and the shipped app
+  // breaks the moment that directory disappears.
+  await cp(RUNTIME_SRC, join(RESOURCES, 'runtime'), { recursive: true, dereference: false, verbatimSymlinks: true })
 
   /* ── data dir: shipped EMPTY — the shell seeds profiles, plugin links, and
      logs on first boot (and reconciles them on every boot). A prior local
@@ -163,6 +167,32 @@ async function main() {
   const manifest = JSON.parse(await readFile(join(RESOURCES, 'runtime', 'harness.json'), 'utf8'))
   console.log(`app ready: ${APP_DIR}`)
   console.log(`  runtime ${manifest.runtimeVersion} (dsh ${manifest.dshVersion}), app ${config.appVersion}`)
+
+  /* ── absolute-symlink gate ──
+     The bundle must be fully relocatable: every symlink inside it has to be
+     relative (Electron Framework's Versions/Current/*, npm's .bin shims, …).
+     An absolute link silently ties the app to this machine's build paths and
+     crashes on any machine where they don't exist (dyld: Library not
+     loaded). fs.cp rewrites links unless verbatimSymlinks is set, so verify
+     the finished bundle instead of trusting every copy call. */
+  const absoluteLinks = []
+  const walk = async dir => {
+    const entries = await readdir(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        await walk(full)
+      } else if (entry.isSymbolicLink()) {
+        const target = await readlink(full) // the raw link text
+        if (target.startsWith('/')) absoluteLinks.push(`${full} -> ${target}`)
+      }
+    }
+  }
+  await walk(APP_DIR)
+  if (absoluteLinks.length > 0) {
+    throw new Error(`绝对符号链接检查失败：${APP_DIR} 内发现 ${absoluteLinks.length} 个绝对链接（应用将无法在构建机之外运行）:\n  ${absoluteLinks.slice(0, 10).join('\n  ')}`)
+  }
+  console.log('  symlink check: no absolute links in bundle')
 }
 
 main().catch(error => {
