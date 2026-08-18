@@ -741,7 +741,21 @@ if (!gotLock) {
       fs.mkdirSync(HOME, { recursive: true })
       fs.mkdirSync(LOGS, { recursive: true })
     } catch (error) {
+      // The bundle sits on a read-only volume (e.g. the app was launched
+      // straight from the mounted DMG instead of “应用程序”). The harness
+      // needs its writable data dir, so fail fast with guidance instead of
+      // boot-looping on EROFS/ENOENT.
       log(`data dir setup failed: ${error.message}`)
+      dialog.showMessageBoxSync({
+        type: 'info',
+        title: 'DeepSeek Harness',
+        message: '请先将 DeepSeek Harness 移到“应用程序”文件夹',
+        detail: 'DeepSeek Harness 需要写入自己的数据目录（会话记录、设置）。请把 DeepSeek Harness 拖到“应用程序”文件夹后，再从那里打开。',
+        buttons: ['打开“应用程序”文件夹', '退出'],
+      })
+      osShell.openPath('/Applications')
+      app.quit()
+      return
     }
 
     if (!ensureRuntime()) {

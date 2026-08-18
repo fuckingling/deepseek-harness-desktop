@@ -37,7 +37,12 @@ async function main() {
   const staging = join(BUILD, 'dmg-staging')
   await rm(staging, { recursive: true, force: true })
   await mkdir(staging, { recursive: true })
-  await cp(APP_DIR, join(staging, `${APP_NAME}.app`), { recursive: true, dereference: false })
+  // verbatimSymlinks is REQUIRED: without it fs.cp re-resolves every symlink
+  // in the bundle (Electron Framework's relative links, Helpers, …) to an
+  // ABSOLUTE path on the build machine, and the DMG then crashes on any
+  // machine where that path doesn't exist (dyld: Library not loaded) — or
+  // runs from a foreign framework copy while the path still exists.
+  await cp(APP_DIR, join(staging, `${APP_NAME}.app`), { recursive: true, dereference: false, verbatimSymlinks: true })
   await run('/bin/ln', ['-s', '/Applications', join(staging, 'Applications')], { label: 'ln' })
 
   console.log(`creating ${dmgPath} …`)
