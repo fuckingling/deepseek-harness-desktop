@@ -1,5 +1,5 @@
 // E2E probe: settings modal structure — classes, z-indexes, and whether the
-// modal renders inside #root (the vision panel shrink targets #root).
+// modal renders inside #root (the settings panel shrink targets #root).
 (async function () {
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
   const describe = b => ((b.getAttribute('aria-label') || '') + ' | ' + (b.textContent || '').trim()).slice(0, 60)

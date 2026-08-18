@@ -38,9 +38,6 @@ async function syncPluginLinks(homeDir) {
   const profileModules = join(homeDir, 'profiles', 'web', 'node_modules')
   const plugins = [
     { name: 'dsh-launcher-updater', target: join(RUNTIME, 'plugins', 'dsh-launcher-updater') },
-    { name: '@liustack/modlens', target: join(RUNTIME, 'harness', 'node_modules', '@liustack', 'modlens') },
-    { name: 'dshmarket', target: join(RUNTIME, 'harness', 'node_modules', 'dshmarket') },
-    { name: '@dsh-external/dsh-super-injector', target: join(RUNTIME, 'harness', 'node_modules', '@dsh-external', 'dsh-super-injector') },
   ]
   for (const plugin of plugins) {
     if (!existsSync(plugin.target)) {

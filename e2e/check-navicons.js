@@ -8,7 +8,7 @@
   settingsBtn.click()
   await wait(1800)
 
-  const targets = ['插件市场', '备份与还原', '个人中心', '更新']
+  const targets = ['备份与还原', '个人中心', '更新']
   const rows = []
   const labels = Array.from(document.querySelectorAll("span[class*='navLabel']"))
   for (const label of labels) {

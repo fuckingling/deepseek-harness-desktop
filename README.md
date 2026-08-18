@@ -5,12 +5,17 @@
 不依赖、也不改动系统里的任何东西；设置菜单里新增**“更新”**页面，点一下即可原地更新 Harness，
 不用重新下载安装。
 
-开箱自带：
+开箱自带（均为插件形式新增，官方自带功能原样保留）：
 
+- **更新**：设置 → 更新，原地更新 Harness。默认直接查官方 npm registry
+  （`@deepseek-ai/dsh` 的 dist-tag），发现新版本后“更新并重启”，用应用内置 npm
+  从官方源安装后原子替换 runtime 并重启（不触碰系统环境）；配置了启动器 feed
+  （`harness.json` 的 `updateFeed`）时同时检查整包更新产物。支持自动检查（默认开启，
+  每天定时检查，发现更新只提示、由你手动安装）。
 - **个人中心**：设置 → 个人中心，Codex 风格的使用统计：累计 Token（输入/缓存命中/缓存未命中/
   输出四分桶）、单日峰值（含日期）、最长会话持续时间、连续活跃天数、累计费用（按官方 DeepSeek
   价格：8/17 调价前后分档 + 高峰 9–12/14–18 北京时间、低谷半价，价格可在页面修改），
-  以及 GitHub 式 **Token 活动热力图**（26 周 × 7 天，悬停看当日 token 与费用）和模型明细。
+  以及 GitHub 式 **Token 活动热力图**（全年 × 7 天，悬停看当日 token 与费用）和模型明细。
   数据直接聚合自会话存储：投影缓存 `storages/session_projcache.json`（域数据形态 v3 或旧扁平形态）、
   工作区 `storages/workspace.json` 与逐会话事件日志 `sessions/**/session.jsonl.zstd`（按帧解压，
   逐条用量精确到天）；逐条用量缺失时按会话最后活跃日归集（页面有说明）。
@@ -18,25 +23,9 @@
   `storages/`）与聊天中粘贴的图片（`attachments/`）打包成 tar.gz（保存在应用内，可下载带走）；
   还原时先校验归档安全性，把当前记录留一份 `.pre-restore` 快照后原子替换，并重启 Harness
   完整加载——字节级还原、失败不破坏现有数据。支持上传备份文件跨机器还原。
-- **插件市场**：默认内置 [dsh-market](https://github.com/dsh-market/dsh-market)（465 star）——
-  设置 → 插件市场，800+ 社区插件逛、搜、一键安装/升级/卸载、主题即换、备份恢复。
-  市场用的 pnpm 也打包在应用里（`runtime/node/bin/pnpm`，npm 包形态跑在 Electron 兼任的 Node 上——外壳以 `ELECTRON_RUN_AS_NODE=1` 把自身二进制当 Node 用，不再捆绑独立 Node.js），
-  pnpm 的包缓存与 store 都指向应用内数据目录——不探测系统 PATH、不用 corepack、不装全局包；
-  市场自身的"一键重启"已关闭（`allowRestart: false`），重启统一走 设置 → 更新 → 重启 Harness，
-  由桌面外壳监督执行。
-- **图像支持**：默认内置 [ModLens](https://github.com/liustack/modlens)（`@liustack/modlens@3.17.3`，
-  第一个 DSH 视觉插件）：粘贴/拖入图片即得结构化 JSON 证据（OCR、版面、语义），
-  模型自带 `modlens_read_image` 工具，模型选择器自动出现 `(modlens vision)` 包装入口；
-  设置 → 插件 → 视觉引擎（ModLens）里配置引擎（免费 Gemini key / OpenAI 兼容端点 /
-  Antigravity CLI 等六种内置 provider + 复用本机已登录的 Codex/OpenCode/Pi 等）。
-  注：ModLens 的提供商配置按它自身设计存于 `~/.modlens/config.json`（跨 harness 共享）。
-- **路由套件**：默认内置 [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite) 的
-  dsh-super-injector（`dev_*` 运行时插件管理工具）与 Router Standard / Router Spec 实验预设；
-  首次启动时外壳会把随 runtime 分发的预设复制到 `data/home/.agent-presets/`，新建会话即可选择。
 - **Codex 风格外框**：沉浸式无边框深色窗口（`hiddenInset`，红绿灯悬浮内嵌），
   顶部注入拖拽条可任意拖动窗口，侧边栏 logo 区（宽/窄两种形态）自动避让 macOS 窗口按钮，
-  记忆窗口位置与大小、居中启动。外壳还注入 UI 兼容性修正：插件市场的分类选择行
-  吸顶时不再上浮盖住搜索框（`top:0` 锚定、去掉负 margin）。
+  记忆窗口位置与大小、居中启动。
 
 ## 工作原理
 
@@ -53,13 +42,12 @@ DeepSeek Harness.app/Contents/
     │   ├── node/                bin shim（node/npm/pnpm）：exec 外壳的
     │   │                        Electron 二进制（ELECTRON_RUN_AS_NODE=1），
     │   │                        不再捆绑独立 Node.js
-    │   ├── harness/             @deepseek-ai/dsh + dsh-visual-plugin + 全部依赖
-    │   ├── plugins/             dsh-launcher-updater 更新插件
-    │   ├── agent-presets/       dsh-routing-suite 路由预设（首启复制到用户目录）
-    │   ├── profile-overlay.yml  默认插件挂载层（外壳以 --patch 应用）
+    │   ├── harness/             @deepseek-ai/dsh + 全部依赖
+    │   ├── plugins/             dsh-launcher-updater 启动器插件（更新 + 个人中心）
+    │   ├── profile-overlay.yml  插件挂载层（外壳以 --patch 应用）
     │   └── harness.json         运行时清单（版本 / 通道 / 更新源）
     ├── runtime.backup/          更新前的上一版本（回滚用，健康启动后自动清除）
-    └── data/                    用户数据：DSH_HOME（会话、设置、预设）、日志；
+    └── data/                    用户数据：DSH_HOME（会话、设置）、日志；
         └── pristine/            自修复快照：首次健康启动后由外壳把当前
                                  runtime 压缩到 runtime-<版本>.tar.gz
                                  （不再随 .app 打包第二份 runtime 副本）
@@ -79,8 +67,7 @@ Node 用），等服务器就绪后打开窗口。用户的系统环境完全不
 默认插件通过**运行时 overlay**（`runtime/profile-overlay.yml`，以 `--patch` 叠加在 web profile
 之后）挂载：插件包本体随 runtime 一起分发，外壳每次启动把 profile 的 `node_modules` 符号链接
 对账到 runtime 内的插件位置。**升级 runtime 即升级插件**，用户数据目录无需改动；移除某个默认
-插件也只需在新 runtime 的 overlay 里删掉对应行。随 runtime 分发的 `agent-presets/` 默认预设
-会在首次启动时复制到 `data/home/.agent-presets/`（已存在则不覆盖用户自建预设）。
+插件也只需在新 runtime 的 overlay 里删掉对应行。
 
 ### 应用内更新（设置 → 更新）
 
@@ -101,7 +88,7 @@ npm 的 `@deepseek-ai/dsh`。因此“检查更新”默认直接查**官方 npm
 1. 对比应用内 `dshVersion` 与官方 `dist-tag latest`；发现新版本后“更新并重启”会：
    把当前 runtime 复制到暂存目录 → 重写 dsh 版本 → 用**应用内置 npm**（以纯 JS 依赖随 runtime 分发，经 `node/bin/npm` shim 运行，
    缓存指向应用内目录，不触碰系统环境）从官方 registry 安装 → 原子交换 → 重启。
-   默认插件（图像支持等）随之保留。
+   启动器插件（更新/备份还原/个人中心）随之保留。
 2. 配置了启动器 feed（`harness.json` 的 `updateFeed`）时，同时检查 feed 的 runtime 产物；
    官方 dsh 版本优先，feed 用于分发启动器专属的整包更新（默认插件集变更、Electron 升级等）。
 
@@ -235,10 +222,9 @@ assets/icon-app.svg             App 图标源（icon.icns 由 make-icon 生成�
 e2e/                            Electron 页内自动化探测脚本（npm run e2e 运行）
 ```
 
-默认插件在 `build-runtime.mjs` 里维护：`@liustack/modlens`、`dshmarket`、`pnpm` 的版本分别用
-`--modlens-version` / `--dshmarket-version` / `--pnpm-version` 覆盖；增删默认插件 =
-改 `runtime/harness/package.json` 的依赖 + `profile-overlay.yml` 的行。市场安装的社区插件
-落在用户数据目录（`data/home/profiles/web`，随升级保留），与 runtime 里的默认插件互不影响。
+启动器插件在 `build-runtime.mjs` 里维护：`pnpm`、`npm` 的版本分别用 `--pnpm-version` /
+`--npm-version` 覆盖；增删默认插件 = 改 `runtime/harness/package.json` 的依赖 +
+`profile-overlay.yml` 的行。
 
 ## 已知边界
 

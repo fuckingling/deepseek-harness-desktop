@@ -1,5 +1,5 @@
 // E2E probe: click 新会话 to create a real session record, then report the
-// settings nav (should include 备份与还原) and the sidebar session list.
+// settings nav and the sidebar session list.
 (async function () {
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
   const describe = b => ((b.getAttribute('aria-label') || '') + ' | ' + (b.textContent || '').trim()).slice(0, 60)

@@ -232,9 +232,6 @@ let commitTimer = null
  */
 const RUNTIME_PLUGIN_LINKS = [
   { name: 'dsh-launcher-updater', target: parts => path.join(parts.runtime, 'plugins', 'dsh-launcher-updater') },
-  { name: '@liustack/modlens', target: parts => path.join(parts.runtime, 'harness', 'node_modules', '@liustack', 'modlens') },
-  { name: 'dshmarket', target: parts => path.join(parts.runtime, 'harness', 'node_modules', 'dshmarket') },
-  { name: '@dsh-external/dsh-super-injector', target: parts => path.join(parts.runtime, 'harness', 'node_modules', '@dsh-external', 'dsh-super-injector') },
 ]
 
 function syncPluginLinks() {
@@ -262,36 +259,6 @@ function syncPluginLinks() {
   }
 }
 
-/**
- * Default agent presets shipped inside the runtime (dsh-routing-suite).
- * Copy them into the user's DSH_HOME only when the preset id is absent, so
- * user-authored copies are never overwritten by a runtime update.
- */
-function syncUserPresets() {
-  const shippedRoot = path.join(RUNTIME, 'agent-presets')
-  if (!exists(shippedRoot)) return
-  const userRoot = path.join(HOME, '.agent-presets')
-  let entries = []
-  try {
-    entries = fs.readdirSync(shippedRoot, { withFileTypes: true })
-  } catch {
-    return
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const source = path.join(shippedRoot, entry.name)
-    const target = path.join(userRoot, entry.name)
-    if (exists(target)) continue
-    try {
-      fs.mkdirSync(userRoot, { recursive: true })
-      fs.cpSync(source, target, { recursive: true, dereference: false })
-      log(`preset: installed ${entry.name} → ${target}`)
-    } catch (error) {
-      log(`preset: failed to install ${entry.name}: ${error.message}`)
-    }
-  }
-}
-
 function spawnHarness() {
   rotateLog()
   bootStartAt = Date.now()
@@ -302,7 +269,6 @@ function spawnHarness() {
   const cliBin = path.join(RUNTIME, DSH_CLI_BIN)
   const manifest = readManifest(RUNTIME) ?? {}
   syncPluginLinks()
-  syncUserPresets()
 
   const env = {
     ...process.env,
@@ -323,9 +289,9 @@ function spawnHarness() {
   if (manifest.updateFeed) env.DSH_LAUNCHER_FEED_URL = manifest.updateFeed
   if (manifest.channel) env.DSH_LAUNCHER_CHANNEL = manifest.channel
 
-  // The composition overlay mounts the bundled default plugins (updater +
-  // image support). It rides the runtime artifact, so updating the runtime
-  // updates the plugin set without touching user data.
+  // The composition overlay mounts the bundled launcher plugin (updates,
+  // backup & restore, personal center). It rides the runtime artifact, so
+  // updating the runtime updates the plugin set without touching user data.
   //
   // Argument order matters: the dsh launcher's own flags (--patch) must come
   // FIRST — the first unknown token (--host) starts the inner args the web
@@ -541,15 +507,6 @@ const WINDOW_CSS = `
     height: 72px !important;
     padding-top: 34px !important;
   }
-  /* dsh-market's category bar ("全部…" chips) is sticky at top:-13px with a
-     -12px top margin, so scrolling the Discover list slides it UP OVER the
-     search box and its opaque background covers the input's lower half.
-     Stick it flush at the container top and drop the negative margin: the
-     search scrolls away cleanly under a properly anchored bar. */
-  .eGUBIq_cats {
-    top: 0 !important;
-    margin-top: 0 !important;
-  }
 `
 
 function injectWindowCss() {
@@ -560,18 +517,15 @@ function injectWindowCss() {
 
 /**
  * The settings nav renders a hardcoded icon map (models/agent-presets/
- * plugins) and falls back to the gear for every other section, so all our
- * sections — 更新, 备份与还原, 个人中心, and the bundled 插件市场 — show the
- * same wrong glyph. This observer swaps the nav icon per section label with
- * proper single-path glyphs (Material Design icon set, the same fill style
- * DSH's own icons use). Pure DOM patch: survives harness updates, degrades
- * to the stock gear if selectors ever drift.
+ * plugins) and falls back to the gear for every other section, so our
+ * launcher sections — 更新, 备份与还原, 个人中心 — show the same wrong
+ * glyph. This observer swaps the nav icon per section label with proper
+ * single-path glyphs (Material Design icon set, the same fill style DSH's
+ * own icons use). Pure DOM patch: survives harness updates, degrades to
+ * the stock gear if selectors ever drift.
  */
 const NAV_ICON_PATCH_SCRIPT = `(function () {
   var GLYPHS = {
-    "插件市场": "M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z",
-    "Plugin Market": "M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z",
-    "Market": "M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z",
     "备份与还原": "M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z",
     "Backup & Restore": "M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z",
     "更新": "M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z",
