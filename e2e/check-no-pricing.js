@@ -15,6 +15,6 @@
     noPricing: !/计费设置|Pricing/.test(body),
     hasStats: /累计 Token|Total tokens/.test(body),
     hasHeatmap: /Token 活动|Token activity/.test(body),
-    hasModel: /模型明细|By model/.test(body),
+    hasModel: /模型调用排行|Model ranking/.test(body),
   }
 })()

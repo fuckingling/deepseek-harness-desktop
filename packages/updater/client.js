@@ -218,11 +218,12 @@ window.__ModuleLoader__.load({
 				maxHeight: "220px",
 				overflowY: "auto",
 			},
-			statRow: { display: "flex", flexWrap: "wrap", gap: "10px" },
-			statCard: { flex: "1 1 160px", minWidth: "150px", border: "1px solid rgba(128,128,128,0.35)", borderRadius: "10px", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "4px" },
-			statLabel: { fontSize: "12px", opacity: 0.72 },
+			statBar: { display: "flex", alignItems: "stretch", border: "1px solid rgba(128,128,128,0.35)", borderRadius: "12px", overflow: "hidden" },
+			statItem: { flex: "1 1 0", minWidth: 0, padding: "14px 12px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px", textAlign: "center" },
+			statDivider: { width: "1px", background: "rgba(128,128,128,0.25)" },
 			statBig: { fontSize: "20px", fontWeight: 650, fontVariantNumeric: "tabular-nums" },
-			statSub: { fontSize: "11.5px", opacity: 0.65, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+			statLabel: { fontSize: "12px", opacity: 0.72 },
+			statSub: { fontSize: "11px", opacity: 0.6, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 			warn: { fontSize: "12.5px", opacity: 0.8 },
 		};
 
@@ -648,7 +649,6 @@ window.__ModuleLoader__.load({
 			peakDay: "峰值",
 			longestSession: "最长持续时间",
 			streak: "连续天数",
-			totalCost: "累计费用",
 			input: "输入",
 			cacheHit: "缓存命中",
 			cacheMiss: "缓存未命中",
@@ -657,21 +657,11 @@ window.__ModuleLoader__.load({
 			heatmapTitle: "Token 活动",
 			less: "少",
 			more: "多",
-			byModel: "模型明细",
+			byModel: "模型调用排行",
 			model: "模型",
-			_removed_: "计费设置",
-			_removed_: "官方价格（元/百万 token；8/17 生效，高峰 9–12、14–18 北京时间，低谷半价）。修改仅影响之后的统计口径，可随时恢复。",
-			_removed_: "8/17 前",
-			_removed_: "低谷",
-			_removed_: "高峰",
-			_removed_: "保存价格",
-			_removed_: "已保存",
 			noData: "还没有聊天记录。开始对话后，这里会出现统计。",
 			attributionHint: "按天统计来自会话记录；无逐条用量时按会话最后活跃日归集。",
-			_removed_: "命中",
-			_removed_: "未命中",
 			failed: "操作失败",
-			_removed_: "输出",
 			sessions: "会话数",
 		};
 		const enP = {
@@ -681,7 +671,6 @@ window.__ModuleLoader__.load({
 			peakDay: "Peak day",
 			longestSession: "Longest session",
 			streak: "Streak",
-			totalCost: "Total cost",
 			input: "Input",
 			cacheHit: "Cache hit",
 			cacheMiss: "Cache miss",
@@ -690,7 +679,7 @@ window.__ModuleLoader__.load({
 			heatmapTitle: "Token activity",
 			less: "Less",
 			more: "More",
-			byModel: "By model",
+			byModel: "Model ranking",
 			model: "Model",
 			noData: "No chat records yet — stats appear once you start chatting.",
 			attributionHint: "Daily figures come from session records; sessions without per-message usage are attributed to their last-activity day.",
@@ -721,10 +710,6 @@ window.__ModuleLoader__.load({
 			if (n < 1000) return String(Math.round(n));
 			if (n < 1000000) return `${(n / 1000).toFixed(1)}K`;
 			return `${(n / 1e6).toFixed(2)}M`;
-		}
-
-		function fmtCost(n) {
-			return `¥${n.toFixed(2)}`;
 		}
 
 		function fmtDur(ms) {
@@ -784,19 +769,23 @@ window.__ModuleLoader__.load({
 			const totals = stats.totals ?? { input: 0, cacheHit: 0, cacheMiss: 0, output: 0, tokens: 0, cost: 0 };
 			const peak = stats.peak;
 			const longest = stats.longest;
-			const statCard = (label, big, sub) => React.createElement("div", { style: styles.statCard },
-				React.createElement("div", { style: styles.statLabel }, label),
+			// Codex-style stat bar: one rounded card, centered value-over-label
+			// cells separated by hairline dividers.
+			const statItem = (key, big, label, sub) => React.createElement("div", { key, style: styles.statItem },
 				React.createElement("div", { style: styles.statBig }, big),
+				React.createElement("div", { style: styles.statLabel }, label),
 				sub === null || sub === undefined ? null : React.createElement("div", { style: styles.statSub }, sub),
 			);
 
-			const cards = React.createElement("div", { style: styles.statRow },
-				statCard(t("totalTokens"), fmtTokens(totals.tokens),
+			const cards = React.createElement("div", { style: styles.statBar },
+				statItem("total", fmtTokens(totals.tokens), t("totalTokens"),
 					`${t("input")} ${fmtTokens(totals.input + totals.cacheMiss)} · ${t("cacheHit")} ${fmtTokens(totals.cacheHit)} · ${t("output")} ${fmtTokens(totals.output)}`),
-				statCard(t("peakDay"), peak === null ? "—" : fmtTokens(peak.tokens), peak === null ? "" : `${peak.date} · ${fmtCost(peak.cost ?? 0)}`),
-				statCard(t("longestSession"), longest === null ? "—" : fmtDur(longest.spanMs), longest === null ? "" : (longest.title || (longest.model || "").slice(0, 60))),
-				statCard(t("streak"), `${stats.streak ?? 0} ${t("days")}`, `${t("sessions")} ${stats.sessions ?? 0}`),
-				statCard(t("totalCost"), fmtCost(totals.cost), ""),
+				React.createElement("div", { key: "d1", style: styles.statDivider }),
+				statItem("peak", peak === null ? "—" : fmtTokens(peak.tokens), t("peakDay"), peak === null ? null : peak.date),
+				React.createElement("div", { key: "d2", style: styles.statDivider }),
+				statItem("longest", longest === null ? "—" : fmtDur(longest.spanMs), t("longestSession"), longest === null ? null : (longest.title || (longest.model || "").slice(0, 60))),
+				React.createElement("div", { key: "d3", style: styles.statDivider }),
+				statItem("streak", `${stats.streak ?? 0} ${t("days")}`, t("streak"), `${t("sessions")} ${stats.sessions ?? 0}`),
 			);
 
 			// heatmap: the full calendar year (Jan–Dec), Monday-aligned full-width
@@ -846,7 +835,7 @@ window.__ModuleLoader__.load({
 				React.createElement("div", { style: { ...styles.title, display: "flex", justifyContent: "space-between" } },
 					React.createElement("span", null, t("heatmapTitle")),
 					React.createElement("span", { style: { fontSize: "11px", opacity: 0.75, fontFamily: "ui-monospace, Menlo, monospace" } },
-						hover === null ? "" : `${hover.date} · ${fmtTokens(hover.tokens)} · ${fmtCost(hover.cost ?? 0)}`),
+						hover === null ? "" : `${hover.date} · ${fmtTokens(hover.tokens)}`),
 				),
 				React.createElement("div", { style: gridStyle },
 					weeks.map((week, wi) => React.createElement("div", { key: wi, style: { display: "flex", flexDirection: "column", gap: "3px" } },
@@ -863,11 +852,15 @@ window.__ModuleLoader__.load({
 				),
 			);
 
-			// by-model table
+			// by-model ranking: real model names, sorted by usage (descending)
 			const models = stats.byModel ?? [];
-			const modelRows = models.map(m => React.createElement("div", { key: m.model, style: styles.row },
-				React.createElement("span", { style: styles.key }, m.model === "pro" ? "pro" : (m.model === "flash" ? "flash" : m.model)),
-				React.createElement("span", { style: styles.value }, `${fmtTokens(m.tokens)} · ${fmtCost(m.cost)}`),
+			const shareBase = totals.tokens > 0 ? totals.tokens : 1;
+			const modelRows = models.map((m, i) => React.createElement("div", { key: m.model, style: styles.row },
+				React.createElement("span", { style: styles.key },
+					React.createElement("span", { style: { ...styles.mono, opacity: 0.6, marginRight: "8px" } }, String(i + 1).padStart(2, "0")),
+					m.model,
+				),
+				React.createElement("span", { style: styles.value }, `${fmtTokens(m.tokens)} · ${Math.round((m.tokens / shareBase) * 100)}%`),
 			));
 			const modelCard = React.createElement("div", { style: styles.card },
 				React.createElement("div", { style: styles.title }, t("byModel")),

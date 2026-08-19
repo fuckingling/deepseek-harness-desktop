@@ -76,6 +76,12 @@ function modelTier(model) {
   return 'flash'
 }
 
+/** Display/aggregation key for a model: the real model name, never a tier. */
+function modelName(model) {
+  const s = String(model ?? '').trim()
+  return s === '' ? 'unknown' : s
+}
+
 function readJson(path) {
   try {
     return JSON.parse(readFileSync(path, 'utf8'))
@@ -236,7 +242,10 @@ function parseLogText(text, out) {
         const cacheMiss = Number(usage.cacheWriteTokens ?? 0) || 0
         const output = Number(usage.outputTokens ?? usage.completionTokens ?? 0) || 0
         if (t > 0 && input + cacheHit + cacheMiss + output > 0) {
-          out.events.push({ time: t, input, cacheHit, cacheMiss, output })
+          // stamp the model active at this point in the log (request/header
+          // and request/context events precede the usage they apply to, so a
+          // session that switched models mid-way attributes each call right)
+          out.events.push({ time: t, input, cacheHit, cacheMiss, output, model: out.model })
         }
         break
       }
@@ -550,10 +559,11 @@ export class PersonalStatsEngine {
       mergeBucket(day, bucket)
       day.sessions += sessions
       mergeBucket(total, bucket)
-      let m = byModel.get(tier)
+      const name = modelName(model)
+      let m = byModel.get(name)
       if (m === undefined) {
-        m = { model: tier, ...emptyBucket() }
-        byModel.set(tier, m)
+        m = { model: name, ...emptyBucket() }
+        byModel.set(name, m)
       }
       mergeBucket(m, bucket)
     }
@@ -565,7 +575,7 @@ export class PersonalStatsEngine {
       const span = Math.max(0, (rec.updatedAt > 0 ? rec.updatedAt : rec.createdAt) - rec.createdAt)
       if (events !== undefined && events.length > 0) {
         // exact per-day attribution from the session's own usage events
-        for (const ev of events) addContribution(localDayKey(ev.time), rec.model, ev, ev.time, 0)
+        for (const ev of events) addContribution(localDayKey(ev.time), ev.model ?? rec.model, ev, ev.time, 0)
         const day = byDay.get(localDayKey(lastAt))
         if (day !== undefined) day.sessions += 1
       } else {

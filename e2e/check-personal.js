@@ -1,5 +1,5 @@
-// E2E probe: settings → 个人中心 renders stat cards, heatmap, model table,
-// and the pricing editor.
+// E2E probe: settings → 个人中心 renders the Codex-style stat bar, heatmap,
+// and the model usage ranking (no cost figures anywhere).
 (async function () {
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
   const describe = b => ((b.getAttribute('aria-label') || '') + ' | ' + (b.textContent || '').trim()).slice(0, 60)
@@ -15,14 +15,14 @@
   await wait(2500)
   const body = document.body.innerText
   return {
-    ok: /累计 Token|Total tokens/.test(body) && /连续天数|Streak/.test(body) && /累计费用|Total cost/.test(body),
+    ok: /累计 Token|Total tokens/.test(body) && /连续天数|Streak/.test(body) && !/累计费用|Total cost/.test(body) && /模型调用排行|Model ranking/.test(body),
     hasTokens: /累计 Token|Total tokens/.test(body),
     hasPeak: /峰值|Peak day/.test(body),
     hasLongest: /最长持续时间|Longest session/.test(body),
     hasStreak: /连续天数|Streak/.test(body),
     hasCost: /累计费用|Total cost/.test(body),
     hasHeatmap: /Token 活动|Token activity/.test(body),
-    hasModel: /模型明细|By model/.test(body),
+    hasModel: /模型调用排行|Model ranking/.test(body),
     hasPricing: /计费设置|Pricing/.test(body),
     snippet: body.split('\n').filter(l => l.trim() !== '').slice(14, 44),
   }
